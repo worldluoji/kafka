@@ -1,0 +1,22 @@
+版本号：
+大 + 小 + patch
+
+0.7版本:
+只有基础消息队列功能，无副本；打死也不使用
+
+0.8版本:
+增加了副本机制，新的producer API；建议使用0.8.2.2版本；不建议使用0.8.2.0之后的producer API
+
+0.9版本:
+增加权限和认证，新的consumer API，Kafka Connect功能；不建议使用consumer API；
+
+0.10版本:
+引入Kafka Streams功能，bug修复；建议版本0.10.2.2；建议使用新版consumer API
+
+0.11版本:
+producer API幂等，事物API，消息格式重构；建议版本0.11.0.3；谨慎对待消息格式变化
+
+1.0和2.0版本:
+Kafka Streams改进；建议版本2.0；1.0和2.0版本Kafka Streams差异比较大。
+
+江湖经验：不要成为最新版本的小白鼠

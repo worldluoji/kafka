@@ -1,0 +1,162 @@
+0) 为什么要学习Kafka?
+美国市场近期就业第二高薪，仅次于Go语言。又是Java体系。
+
+1）什么是Kafka?
+kafka是一款开源的消息引擎系统，支持点对点模型和发布-订阅模型。
+那么什么是消息引擎系统？
+系统A发送消给消息引擎系统，系统B从消息引擎系统中取出消息进行处理。
+作为消息引擎，其其优点是可以进行平谷削峰和业务解耦。
+kafka是纯二进制进行消息传输的，并没有使用流行的Protobuf和Json等
+
+2) kafka还是一个分布式流处理平台。
+
+3）kafka为什么要分区？分区的作用就是提供负载均衡。分区策略则决定了消息会发到拿个分区。
+常见的分区策略：随机，轮询，按照key值
+kafka默认使用的是轮询的策略。
+按照key值的策略也十分常用，如果指定了key值就是按照key值的策略：
+List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
+return Math.abs(key.hashCode()) % partitions.size();
+当然，也可以自定义分区策略。实现Partitioner接口，覆写其partition()方法和close()方法即可
+
+4) kafka压缩可以发生在生产者端和Broken端。生产者端配置compression.type即表示开启了指定类型的压缩算法。
+例：
+ Properties props = new Properties();
+ props.put("bootstrap.servers", "localhost:9092");
+ props.put("acks", "all");
+ props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+ props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+ // 开启 GZIP 压缩
+ props.put("compression.type", "gzip");
+ Producer<String, String> producer = new KafkaProducer<>(props);
+两种情况可能让Broker端压缩消息：
+a.Broker端指定了和Producer端不同的压缩算法
+b.Broker端发生了消息格式转化，即为了兼容老版本的消费者程序，会将新版本消息格式（v2）转化了老版本消息格式(v1)
+总之:Producer压缩，Broker保持，Consumer解压。
+
+5) kakfka只对已提交的消息做有限度的持久化保证。
+那么什么是已提交的消息？即若干个Broker成功接收到一条消息并写入到日志文件后，会告诉Producer消息已经提交成功。可以通过配置选择只有一个Broker提交成功就算已提交，还是所有Broker都成功才算已提交。
+什么又是有限度的持久化保证？假设消息保存再有N个Kafka Broker上，那么前提条件就是这N个Broker中至少一个存活。
+所以，Producer永远要使用带有回调通知的发送API，也就是说不用使用producer.send(msg),而要使用producer.send(msg, callback)
+
+6) Consumer端有一个位移的概念。位移类似于我们看书时用的书签，标记当前阅读了多少页，下次翻书时就能直接调到书签页继续执行。所以为了Consumer端不丢消息，应该维持“先消费，再更新位移”的顺序。
+如果Consumer是多线程，就不要开启自动位移提交，而应该由程序手动提交。否则就会造成先更新位移丢消息的情况。
+
+7）Kafka拦截器分为生产者拦截器和消费者拦截器。生产者拦截器可以在发送消息前和消息提交成功后植入拦截器的逻辑；消费者拦截器可以再消费消息前和提交位移后编写特定的逻辑。拦截器主要用于消息统计，端到端性能检测，客户端监测等。
+
+a.拦截器配置：
+Properties props = new Properties();
+List<String> interceptors = new ArrayList<>();
+interceptors.add("com.yourcompany.kafkaproject.interceptors.AddTimestampInterceptor"); // 拦截器 1
+interceptors.add("com.yourcompany.kafkaproject.interceptors.UpdateCounterInterceptor"); // 拦截器 2
+props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
+……
+b.拦截器的实现：
+Producer端实现org.apache.kafka.clients.ProducerInterceptor，覆写onSend和onAcknowledgement方法
+Consumer端实现org.apache.kafka.clients.ConsumerInterceptor，覆写onConsume和onCommit方法
+注意的是onAcknowledgement拦截器执行早于上面producer.send中的callback函数，而且onAcknowledgement和onSend不在同一个线程，如果它们之间有共享变量，要注意线程安全。也不要在onAcknowledgement中加入重要业务处理，因为这个方法处于Producer发送的主路径中，处理逻辑太复杂会严重影响性能。
+
+8）Kafka的所有通信都是基于TCP协议的，而不是HTTP协议。
+一是为了利用TCP的高级特性，多路复用请求。TCP的多路复用请求会再一条物理连接上创建若干个虚拟链接，每个虚拟链接负责流转自己的数据。实际上TCP的多路复用并不是真正意义上的多路复用，只是提供可靠的消息交付语义保证，比如消息丢失重传。二是TCP是传输层协议，HTTP是应用层协议（底层其实也是TCP），直接用TCP的效率会更高。
+那么何时创建TCP连接呢？
+在创建 KafkaProducer 实例时，生产者应用会在后台创建并启动一个名为 Sender 的线程，该 Sender 线程开始运行时首先会创建与 bootstrap.servers 中所有 Broker的TCP链接（一般选择3-4台即可，连接到任意一Broker就能拿到整个集群中所有Broker的信息）。
+TCP 连接还可能在两个地方被创建：
+一个是在更新元数据后，比如Producer给一个不存在的Topic发送消息，Broker会告诉Producer这个Topic不存在，这时Producer会发送METADATA请求给Kafka集群，获取最新的元数据信息。Producer通过metadata.max.age.ms参数定期的去更新元数据信息，默认值是5分钟，即300000.
+另一个是在消息发送时。Producer发现并不存在与目标Broker的连接。
+何时关闭TCP?
+a.用户主动关闭：例如使用“kill -9 进程号”主动关闭了KafkaProducer程序
+b.Kafka自动关闭，connections.max.idle.ms默认是9分钟，即9分钟没有任何请求流过某个TCP，那么Kafka会把该TCO链接关掉。设置为-1则是永久长连接，不关闭。
+
+9）Producer程序关键就是配置和KafkaProducer
+Properties props = new Properties ();
+props.put(“参数 1”, “参数 1 的值”)；
+props.put(“参数 2”, “参数 2 的值”)；
+……
+try (Producer<String, String> producer = new KafkaProducer<>(props)) {
+            producer.send(new ProducerRecord<String, String>(……), callback);
+	……
+}
+
+10) Kafka消息保障
+a.最多一次：消息会丢失，但不会重复发送
+b.至少一次：消息不会丢失，但是可能重复发送
+c.精确一次：消息不会丢失，也不会重复发送
+默认是第二种，至少一次。
+消息重复发送的原因：某种原因（比如网络延迟），导致Broker应答成功没有返回Producer端，Producer端又发了一次，结果网络好了，就有了两条重复的消息。显然，如果禁止了消息重传，那么就变成了"最多一次"，但是这样就会丢消息了。
+如何实现精确一次？
+a.利用幂等性。props.put(“enable.idempotence,true)或者props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG,true)，这样会创建一个幂等的Producer.这样Broker端会帮你自动去重，原理很简单，就是Broker端多保存一些字段，当幂等Producer发送了具有相同字段值的消息后就知道消息重复了。这种方式只能保证一个主题上某个分区的消息没有重复。
+b.利用事务型Producer
+producer.initTransactions();
+try {
+            producer.beginTransaction();
+            producer.send(record1);
+            producer.send(record2);
+            producer.commitTransaction();
+} catch (KafkaException e) {
+            producer.abortTransaction();
+}
+即recored1和recored2要么都成功，要么都失败。kafka默认的隔离级别是read_uncommitted,不建议使用，建议使用read_commit.当然，启动了事务，也会对性能产生影响。
+
+11）什么是Consumer Group？
+是Kafka提供的可扩展且具有容错性的消费者机制。
+一个Consumer Group使用Group ID（唯一）标识，其下可以有1个或多个Consumer实例；
+其下订阅主题的单个分区，只能分配给组内的某个Consumer实例消费（当然也可以被其它Group消费）；
+Consumer Group订阅的所有主题，不必都消费。但理想情况下，主题数和Consumer实例数应该一致。
+Kafka还有一类Standalone Consumer,它的运行机制与Consumer Group完全不同，但是位移管理机制却是完全相同的，
+它也有自己的GroupId.
+
+12) Kafka位移的原理
+当Kafka的第一个Consumer实例启动时，就会创建位移主题__consumer_offsets，自然也有对应的分区数（通过broker端offsets.topic.num.partitions参数配置，默认是50），
+副本数(offsets.topic.replication.factor, 默认值是3)
+Kafka将 Consumer 的位移数据作为一条条普通的 Kafka消息，提交到 __consumer_offsets中，__consumer_offsets 的主要作用是保存 Kafka的位移信息。位移主题也是一个普通的Kafka主题，但是有自己的消息格式，因此我们不要轻易去修改它。
+位移分为自动提交和手动提交。和Consumer端配置参数enable.auto.commit有关,默认是true.
+位移主题的消息格式可以简单的理解为<K,V>键值对，K是(GorupId,主题名,分区号)，V就是消息的内容（位移信息等）。因为Consumer提交位移信息是提交自己消费的分区的,
+所以K才必须要具体到分区这一层。
+
+13）应该尽量避免Consumer Group的Rebalance
+Rebalance是Kafaka为了解决哪些Consumer消费哪些主题分区而动态调整的一种机制
+发生Rebanlance的三种情况:
+1)组成员数发生变更， 比如有consumer实例被添加或离开组（最常见原因）
+2)订阅主题数发生变化， 比如有新的主题来了，那么这个新的主题哪些consumer来消费？
+3)主题分区数发生变化， 比如产生了新的分区，新的分区哪个consumer消费？
+但是Rebalance会影响消费者端的TPS,而且Rebalance效率也很低。
+要避免Coordinator错误的认为consumer实例挂了
+a.避免心跳请求误会
+Consumer端的参数session.timeout.ms默认是10s，表征每10s内，Coordinator如果没有收到consumer的心跳请求，就认为该consumer已挂，将其从Group中移除。这样就会导致重平衡。
+还有一个参数heartbeat.interval.ms用来配置心跳请求的频率，值越小，单位时间内心跳请求的次数就越多。因此要合理配置这两个参数，防止不必要的误会。
+b.避免消费时间过长的误会
+配置max.poll.interval.ms参数（默认5分钟，表征5分钟内都没有消费完消息，Consumer会主动发起离开Group的请求）比消费者处理总时间稍微长一些；优化消费者业务代码。
+
+
+14）什么是协调者Coordinator
+每个Broker启动时都会创建一个Coordinator，专门为Consumer Group服务，负责Rebalance,位移管理和组成员管理。
+每个broker都有自己的Coordinator组件。
+那么Consumer是如何知道自己的Coordinator所在的Broker？
+a)计算分区ID partitionId=Math.abs(groupId.hashCode() % offsetsTopicPartitionCount)
+b)分区Leader所在的Broker即是要找的。
+
+
+15）Kafka Consumer是非线程安全的
+如果多个线程中共享一个Kafka Consumer实例，那么抛出异常ConcurrentModificationExceptiom.
+例外：其它线程可以使用KafkaConsumer.wakeup()唤醒Consumer.
+
+
+16）Broker端处理请求，使用了Reactor设计模式，Acceptor线程只负责请求转发，不负责处理具体业务，具体业务都由其它线程处理，因此能够取得好的性能。
+
+17) Kafka控制器(Controller)是做什么的?
+协调组件的作用，严重依赖于zookeeper。具体来说：
+a.主题管理  Kafka主题的创建、删除，分区增加等等。
+b.分区重分配 对已有主题分区进行细粒度的重分配等。
+c.Preferred领导者选举  避免某Borker负载过重，而重新选举领导者 
+d.集群成员管理 包括Broker的增加，失效删除等
+e.数据服务  集群元数据的更新
+
+18) 什么是Kafka的高水位（High Watermark）
+Kafka的高水位是和Kafka位移相关的一个边界值。
+高水位的作用：
+a.标志区分哪些消息是可以被Consumer消费的
+b.帮助Kafka副本完成同步
+高水位以下的消息是已经提交的（Producer->broker）消息，也是可以被Consumer消费的。
+同一个副本对象，高水位值不会大于LEO（LOG END OFF,表示副本写入下一条消息的位移值）。
+
+19) 什么是Kafka中的ISR(In Sync Replicas)
+ISR表示一个集合，即和Leader同步的副本结合，也包含Leader.

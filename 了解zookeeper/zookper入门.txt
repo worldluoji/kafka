@@ -1,0 +1,5 @@
+1.为什么要了解学习Apache zookeeper?
+因为Kafka的控制器（Controller）是严重依赖于zookeeper进行Kafka集群管理的，因此有必要了解一下zookeeper.
+
+2.什么是zookeeper?
+Apache zookeeper是一个提供高可靠性的分布式协调框架。

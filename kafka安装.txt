@@ -1,0 +1,89 @@
+kafka基于zookpeer，所以要先安装zookeeper
+一.zookeeper安装：
+1) sudo apt install zookeeper　　或者去官网下载想要的版本
+2) 配置环境变量：
+vim  /etc/profile
+export ZOOKEEPER_HOME=/usr/share/zookeeper
+export PATH=${ZOOKEEPER_HOME}/bin:$PATH
+ZOOKEEPER_HOME为zookeeper程序所在主目录，这里可以用whereis zookeeper来看zookeeper的路径.
+
+3) 然后在/etc/zookeeper/conf(这是zookeeper的配置目录)的zoo.cfg可以修改zookeeper的配置：
+cd conf/
+复制配置文件：
+cp zoo_sample.cfg zoo.cfg
+修改配置文件：
+#数据目录
+dataDir=/home/admin/zookeeper/data
+#日志目录
+dataLogDir=/home/admin/zookeeper/logs
+#心跳间隔时间，zookeeper中使用的基本时间单位，毫秒值。每隔2秒发送一个心跳
+tickTime=2000
+#leader与客户端连接超时时间。表示5个心跳间隔
+initLimit=5
+#Leader与Follower之间的超时时间，表示2个心跳间隔
+syncLimit=2
+#客户端连接端口
+clientPort=2181
+端口号默认是2181
+
+4)cd /usr/share/zookeeper是zookeeper的程序所在目录
+用来启动zookeeper
+cd /usr/share/zookeeper/bin
+sudo sh zkServer.sh start
+(如果报错：
+zkServer.sh: 157: zkServer.sh: Syntax error: "(" unexpected (expecting ";;")
+原因是：zookeeper使用的shell版本和系统使用的shell版本不兼容，当前ubuntu系统的shell默认使用的是dash,而zookeeper使用的是bash
+解决办法：
+dpkg-reconfigure dash
+Tab 移动到NO(选择否) 回车即可
+)
+然后 ps -aux | grep 2181查看进程是否起来
+
+5) 还是在zookeeper的bin目录
+sudo　sh zkCli.sh -server localhost:2181
+看到：
+localhost:2181
+Connecting to localhost:2181
+Welcome to ZooKeeper!
+JLine support is enabled
+
+WATCHER::
+
+WatchedEvent state:SyncConnected type:None path:null
+[zk: localhost:2181(CONNECTED) 0] 
+则表示链接zookper成功了。
+
+二. 安装kafka
+https://kafka.apache.org/downloads
+选择了2.0.0版本，比较稳定，也支持流处理，注意不要下载成src了
+1) 解压 tar -xzvf kafka-2.0.0-src.tgz
+2) 配置kafka
+cd /home/luoji/Downloads/kafkaFiles/kafka-2.11-2.0.0/config
+vim server.properties 
+一些配置:
+broker.id=0 
+port=9092 #端口号，默认为9092
+host.name=10.8.5.101 #服务器IP地址，修改为自己的服务器IP，如果就是本机，就配127.0.0.1k即可 
+log.dirs=/usr/local/kafka/log/kafka #日志存放路径，上面创建的目录 
+zookeeper.connect=localhost:2181 #zookeeper地址和端口，单机配置部署，localhost:2181,　默认就是这个，所以不建议修改zookeeper的关口号。 
+3)配置kafka的zookeeper配置
+vim zookeeper.properties
+mkdir /usr/local/kafka/log/kafka #创建kafka日志目录 
+cd /usr/local/kafka/config #进入配置目录 
+vi server.properties #编辑修改相应的参数 
+dataDir=/usr/local/kafka/zookeeper #zookeeper存储内存中数据库快照的位置
+dataLogDir=/usr/local/kafka/log/zookeeper #zookeeper日志目录 
+clientPort=2181 
+maxClientCnxns=100 #这个操作将限制连接到 ZooKeeper 的客户端的数量，限制并发连接的数量，它通过 IP 来区分不同的客户端。此配置选项可以用来阻止某些类别的 Dos 攻击。将它设置为 0 或者忽略而不进行设置将会取消对并发连接的限制。默认是０
+tickTime=2000 此配置表示，允许 follower （相对于 leader 而言的“客户端”）连接并同步到 leader 的初始化连接时间，它以 tickTime 的倍数来表示。当超过设置倍数的 tickTime 时间，则连接失败。
+initLimit=10 此配置表示， leader 与 follower 之间发送消息，请求和应答时间长度。如果 follower 在设置的时间内不能与leader 进行通信，那么此 follower 将被丢弃。
+
+4)启动kafka
+/home/luoji/Downloads/kafkaFiles/kafka-2.11-2.0.0/bin
+sh kafka-server-start.sh ../config/server.properties
+ps -aus | grep 9092即可查看kafka进程是否起来了
+
+
+
+
+
