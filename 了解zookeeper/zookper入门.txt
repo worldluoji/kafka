@@ -1,5 +1,52 @@
-1.为什么要了解学习Apache zookeeper?
-因为Kafka的控制器（Controller）是严重依赖于zookeeper进行Kafka集群管理的，因此有必要了解一下zookeeper.
+1.为什么要了解学习Apache Zookeeper?
+因为Kafka的控制器（Controller）是严重依赖于Zookeeper进行Kafka集群管理的，因此有必要了解一下Zookeeper.
+Kafka 主要使用 ZooKeeper 来保存它的元数据、监控 Broker 和分区的存活状态，并利用 ZooKeeper 来进行选举
 
 2.什么是zookeeper?
-Apache zookeeper是一个提供高可靠性的分布式协调框架。
+Apache Zookeeper是一个提供高可靠性的分布式协调框架。
+ZooKeeper作为一个分布式的协调服务框架，主要用来解决分布式集群中，应用系统需要面对的各种通用的一致性问题。ZooKeeper 本身可以部署为一个集群，集群的各个节点之间可以通过选举来产生一个 Leader，选举遵循半数以上的原则，所以一般集群需要部署奇数个节点。
+
+3.ZooKeeper 最核心的功能是，它提供了一个分布式的存储系统，数据的组织方式类似于 UNIX 文件系统的树形结构。
+在这个树形的存储结构中，每个节点被称为一个“ZNode”。ZooKeeper 提供了一种特殊的 ZNode 类型：临时节点。这种临时节点有一个特性：如果创建临时节点的客户端与 ZooKeeper 集群失去连接，这个临时节点就会自动消失。在 ZooKeeper 内部，它维护了 ZooKeeper 集群与所有客户端的心跳，通过判断心跳的状态，来确定是否需要删除客户端创建的临时节点。
+分布式系统中一些需要整个集群所有节点都访问的元数据，比如集群节点信息、公共配置信息等，特别适合保存在 ZooKeeper 中
+
+4. Zookeeper的Watcher机制
+ZooKeeper 还提供了一种订阅 ZNode 状态变化的通知机制：Watcher，一旦 ZNode 或者它的子节点状态发生了变化，订阅的客户端会立即收到通知。
+利用 ZooKeeper 临时节点和 Watcher 机制，我们很容易随时来获取业务集群中每个节点的存活状态，并且可以监控业务集群的节点变化情况，当有节点上下线时，都可以收到来自 ZooKeeper 的通知
+
+
+5.Kafka的Consumer是如何找到对应的broker的？
+先根据主题和队列，在Zookeeper右边的树中找到分区对应的 state 临时节点。state 节点中保存了这个分区 Leader 的 BrokerID。
+拿到这个 Leader 的 BrokerID 后，再去左侧的树中，找到 BrokerID 对应的临时节点，就可以获取到 Broker 真正的访问地址了。
+
+但是，Kafka 的客户端并不会去直接连接 ZooKeeper，它只会和 Broker 进行远程通信：
+NetworkClient#poll() -> DefaultMetadataUpdater#maybeUpdate(long) -> DefaultMetadataUpdater#maybeUpdate(long, Node)
+
+
+private long maybeUpdate(long now, Node node) {
+    String nodeConnectionId = node.idString();
+
+    if (canSendRequest(nodeConnectionId, now)) {
+        // 构建一个更新元数据的请求的构造器
+        Metadata.MetadataRequestAndVersion metadataRequestAndVersion = metadata.newMetadataRequestAndVersion();
+        inProgressRequestVersion = metadataRequestAndVersion.requestVersion;
+        MetadataRequest.Builder metadataRequest = metadataRequestAndVersion.requestBuilder;
+        log.debug("Sending metadata request {} to node {}", metadataRequest, node);
+        // 发送更新元数据的请求
+        sendInternalMetadataRequest(metadataRequest, nodeConnectionId, now);
+        return defaultRequestTimeoutMs;
+    }
+
+    //...
+}
+
+这里构造了一个向Zookeeper请求元数据的请求.
+第一点是，在这个方法里面创建的并不是一个真正的更新元数据的 MetadataRequest，而是一个用于构造 MetadataRequest 的构造器 MetadataRequest.Builder，等到真正要发送请求之前，Kafka 才会调用 Builder.buid() 方法把这个 MetadataRequest 构建出来然后发送出去。而且，不仅是元数据的请求，所有的请求都是这样来处理的。
+第二点是，调用 sendInternalMetadataRequest() 方法时，这个请求也并没有被真正发出去，依然是保存在待发送的队列中，然后择机来异步批量发送。
+
+为了提升性能，Kafka 在每个 Broker 中都维护了一份和 ZooKeeper 中一样的元数据缓存，并不是每次客户端请求元数据就去读一次 ZooKeeper。由于 ZooKeeper 提供了 Watcher 这种监控机制，Kafka 可以感知到 ZooKeeper 中的元数据变化，从而及时更新 Broker 
+
+6. Zookeeper的缺点
+ZooKeeper 也并不是完美的，在使用的时候你需要注意几个问题：
+1）不要往 ZooKeeper 里面写入大量数据，它不是一个真正意义上的存储系统，只适合存放少量的数据。依据服务器配置的不同，ZooKeeper 在写入超过几百 MB 数据之后，性能和稳定性都会严重下降。
+2）不要让业务集群的可用性依赖于 ZooKeeper 的可用性，什么意思呢？你的系统可以使用 Zookeeper，但你要留一手，要考虑如果 Zookeeper 集群宕机了，你的业务集群最好还能提供服务。因为 ZooKeeper 的选举过程是比较慢的，而它对网络的抖动又比较敏感，一旦触发选举，这段时间内的 ZooKeeper 是不能提供任何服务的。
