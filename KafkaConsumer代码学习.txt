@@ -1,0 +1,93 @@
+一. Kafka Consumer官方示例，以它为入口学习源码：
+
+     // 设置必要的配置信息
+     Properties props = new Properties();
+     props.put("bootstrap.servers", "localhost:9092");
+     props.put("group.id", "test");
+     props.put("enable.auto.commit", "true");
+     props.put("auto.commit.interval.ms", "1000");
+     props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+     props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+
+     // 创建Consumer实例
+     KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+
+     // 订阅Topic
+     consumer.subscribe(Arrays.asList("foo", "bar"));
+
+     // 循环拉消息
+     while (true) {
+         ConsumerRecords<String, String> records = consumer.poll(100);
+         for (ConsumerRecord<String, String> record : records)
+             System.out.printf("offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value());
+     }
+
+这段代码实际是先做了了一些配置，比如kafka服务器的地之和端口号配置，是否自动提交位移等等;
+然后创建 kafka 消费者实例；
+订阅了foo和bar两个主题
+然后循环拉取主题中的消息
+
+
+二. 进入到subscribe的实现流程：
+
+  public void subscribe(Collection<String> topics, ConsumerRebalanceListener listener) {
+      acquireAndEnsureOpen();
+      try {
+          // 省略部分代码
+
+          // 重置订阅状态
+          this.subscriptions.subscribe(new HashSet<>(topics), listener);
+
+          // 更新元数据
+          metadata.setTopics(subscriptions.groupSubscription());
+      } finally {
+          release();
+      }
+  }
+
+   订阅状态：订阅状态 subscriptions 主要维护了订阅的 topic 和 patition 的消费位置等状态信息。
+   更新元数据信息。属性 metadata 中维护了 Kafka 集群元数据的一个子集，包括集群的 Broker 节点、Topic 和 Partition 在节点上分布，以及我们聚焦的第二个问题：Coordinator 给 Consumer 分配的 Partition 信息。
+
+
+    Kafka 在文档中明确地注明了 Consumer 不是线程安全的，意味着 Consumer 被并发调用时会出现不可预期的结果。为了避免这种情况发生，Kafka 做了主动的检测并抛出异常，而不是放任系统产生不可预期的情况。
+
+    具体 Kafka 是如何实现的并发检测，大家可以看一下方法 acquireAndEnsureOpen() 的实现，很简单也很经典:
+
+
+
+    然后setTopics里会调用requestUpdate方法将需要更新的标识置为true:
+    public synchronized int requestUpdate() {
+        this.needUpdate = true;
+        return this.updateVersion;
+    }
+
+    总结一下：在订阅的实现过程中，Kafka 更新了订阅状态 subscriptions 和元数据 metadata 中的相关 topic 的一些属性，将元数据状态置为“需要立即更新”，但是并没有真正发送更新元数据的请求，整个过程没有和集群有任何网络数据交换。
+
+三. 元数据什么时候被更新的？
+上面只是更新了标识，并没有发生网络数据的交换。
+这时候我们去看拉取消息的流程： KafkaConsumer.poll() ，里面主要是updateAssignmentMetadataIfNeeded()方法和pullForFetches()方法：
+
+1. 在方法 updateAssignmentMetadataIfNeeded() 中，调用了 coordinator.poll() 方法，poll() 方法里面又调用了 client.ensureFreshMetadata() 方法，在 client.ensureFreshMetadata() 方法中又调用了 client.poll() 方法，实现了与 Cluster 通信，在 Coordinator 上注册 Consumer 并拉取和更新元数据。至此，“元数据会在什么时候真正做一次更新”这个问题也有了答案。
+
+2. pullForFetches()先从缓存中获取消息，没有才发送网络请求拉取消息。
+
+    private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollForFetches(Timer timer) {
+        // 省略部分代码
+        // 如果缓存里面有未读取的消息，直接返回这些消息
+        final Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
+        if (!records.isEmpty()) {
+            return records;
+        }
+        // 构造拉取消息请求，并发送
+        fetcher.sendFetches();
+        // 省略部分代码
+        // 发送网络请求拉取消息，等待直到有消息返回或者超时
+        client.poll(pollTimer, () -> {
+            return !fetcher.hasCompletedFetches();
+        });
+        // 省略部分代码
+        // 返回拉到的消息
+        return fetcher.fetchedRecords();
+    }
+
+这里 fetcher.sendFetches();发消息也是批量异步的。
