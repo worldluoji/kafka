@@ -1,0 +1,35 @@
+1. Kafka体系架构=M个producer +N个broker +K个consumer+ZK集群
+
+producer:生产者
+
+Broker：服务代理节点，Kafka服务实例。
+n个组成一个Kafka集群，通常一台机器部署一个Kafka实例，一个实例挂了其他实例仍可以使用，体现了高可用
+
+consumer：消费者
+消费topic 的消息， 一个topic 可以让若干个consumer消费，若干个consumer组成一个 consumer group ，一条消息只能被consumer group 中一个consumer消费，若干个partition 被若干个consumer 同时消费，达到消费者高吞吐量
+
+topic ：主题
+partition： 一个topic 可以拥有若干个partition（从 0 开始标识partition ），分布在不同的broker 上， 实现发布与订阅时负载均衡。producer 通过自定义的规则将消息发送到对应topic 下某个partition，以offset标识一条消息在一个partition的唯一性。
+一个partition拥有多个replica，提高容灾能力。
+replica 包含两种类型：leader 副本、follower副本，
+leader副本负责读写请求，follower 副本负责同步leader副本消息，通过副本选举实现故障转移。
+partition在机器磁盘上以log 体现，采用顺序追加日志的方式添加新消息、实现高吞吐量
+
+
+2. 常用术语
+消息：Record。Kafka 是消息引擎嘛，这里的消息就是指 Kafka 处理的主要对象。
+主题：Topic。主题是承载消息的逻辑容器，在实际使用中多用来区分具体的业务。
+分区：Partition。一个有序不变的消息序列。每个主题下可以有多个分区。
+消息位移：Offset。表示分区中每条消息的位置信息，是一个单调递增且不变的值。
+副本：Replica。Kafka 中同一条消息能够被拷贝到多个地方以提供数据冗余，这些地方就是所谓的副本。副本还分为领导者副本和追随者副本，各自有不同的角色划分。副本是在分区层级下的，即每个分区可配置多个副本实现高可用。
+生产者：Producer。向主题发布新消息的应用程序。
+消费者：Consumer。从主题订阅新消息的应用程序。
+消费者位移：Consumer Offset。表征消费者消费进度，每个消费者都有自己的消费者位移。
+消费者组：Consumer Group。多个消费者实例共同组成的一个组，同时消费多个分区以实现高吞吐。
+重平衡：Rebalance。消费者组内某个消费者实例挂掉后，其他消费者实例自动重新分配订阅主题分区的过程。Rebalance 是 Kafka 消费者端实现高可用的重要手段。
+Broker: Kafka 的服务器端由被称为 Broker 的服务进程构成，即一个 Kafka 集群由多个 Broker 组成，Broker 负责接收和处理客户端发送过来的请求，以及对消息进行持久化。虽然多个 Broker 进程能够运行在同一台机器上，但更常见的做法是将不同的 Broker 分散运行在不同的机器上，这样如果集群中某一台机器宕机，即使在它上面运行的所有 Broker 进程都挂掉了，其他机器上的 Broker 也依然能够对外提供服务。这其实就是 Kafka 提供高可用的手段之一。
+
+3. 为什么kafka不从follower副本上读？
+1，kafka的分区已经让读是从多个broker读从而负载均衡，不是MySQL的主从，压力都在主上；
+2，kafka保存的数据和数据库的性质有实质的区别就是数据具有消费的概念，是流数据，kafka是消息队列，所以消费需要位移，而数据库是实体数据不存在这个概念，如果从kafka的follower读，消费端offset控制更复杂；
+3，Kafka副本机制使用的是异步消息拉取，因此存在leader和follower之间的不一致性。如果要采用读写分离，必然要处理副本lag引入的一致性问题，比如如何实现read-your-writes、如何保证单调读（monotonic reads）以及处理消息因果顺序颠倒的问题。相反地，如果不采用读写分离，所有客户端读写请求都只在Leader上处理也就没有这些问题了——当然最后全局消息顺序颠倒的问题在Kafka中依然存在，常见的解决办法是使用单分区，其他的方案还有version vector，但是目前Kafka没有提供。最后、社区正在考虑引入适度的读写分离方案，比如允许某些指定的follower副本（主要是为了考虑地理相近性）可以对外提供读服务。当然目前这个方案还在讨论中。

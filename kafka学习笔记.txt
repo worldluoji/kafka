@@ -125,7 +125,7 @@ Kafka将 Consumer 的位移数据作为一条条普通的 Kafka消息，提交�
 所以K才必须要具体到分区这一层。
 
 13）应该尽量避免Consumer Group的Rebalance
-Rebalance是Kafaka为了解决哪些Consumer消费哪些主题分区而动态调整的一种机制
+Rebalance是Kafka为了解决哪些Consumer消费哪些主题分区而动态调整的一种机制
 发生Rebanlance的三种情况:
 1)组成员数发生变更， 比如有consumer实例被添加或离开组（最常见原因）
 2)订阅主题数发生变化， 比如有新的主题来了，那么这个新的主题哪些consumer来消费？

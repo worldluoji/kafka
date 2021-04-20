@@ -1,0 +1,10 @@
+1. 源码地址
+git clone git@github.com:apache/kafka.git
+cd kafka
+git checkout 2.2
+
+https://github.com/apache/kafka.git
+
+2. 官方文档
+http://kafka.apache.org/
+http://kafka.apache.org/28/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html
