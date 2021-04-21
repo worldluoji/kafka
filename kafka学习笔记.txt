@@ -64,14 +64,6 @@ Consumer端实现org.apache.kafka.clients.ConsumerInterceptor，覆写onConsume�
 
 8）Kafka的所有通信都是基于TCP协议的，而不是HTTP协议。
 一是为了利用TCP的高级特性，多路复用请求。TCP的多路复用请求会再一条物理连接上创建若干个虚拟链接，每个虚拟链接负责流转自己的数据。实际上TCP的多路复用并不是真正意义上的多路复用，只是提供可靠的消息交付语义保证，比如消息丢失重传。二是TCP是传输层协议，HTTP是应用层协议（底层其实也是TCP），直接用TCP的效率会更高。
-那么何时创建TCP连接呢？
-在创建 KafkaProducer 实例时，生产者应用会在后台创建并启动一个名为 Sender 的线程，该 Sender 线程开始运行时首先会创建与 bootstrap.servers 中所有 Broker的TCP链接（一般选择3-4台即可，连接到任意一Broker就能拿到整个集群中所有Broker的信息）。
-TCP 连接还可能在两个地方被创建：
-一个是在更新元数据后，比如Producer给一个不存在的Topic发送消息，Broker会告诉Producer这个Topic不存在，这时Producer会发送METADATA请求给Kafka集群，获取最新的元数据信息。Producer通过metadata.max.age.ms参数定期的去更新元数据信息，默认值是5分钟，即300000.
-另一个是在消息发送时。Producer发现并不存在与目标Broker的连接。
-何时关闭TCP?
-a.用户主动关闭：例如使用“kill -9 进程号”主动关闭了KafkaProducer程序
-b.Kafka自动关闭，connections.max.idle.ms默认是9分钟，即9分钟没有任何请求流过某个TCP，那么Kafka会把该TCP链接关掉。设置为-1则是永久长连接，不关闭。
 
 9）Producer程序关键就是配置KafkaProducer
 Properties props = new Properties ();
@@ -145,8 +137,8 @@ b.避免消费时间过长的误会
 那么Consumer是如何知道自己的Coordinator所在的Broker？
 a)计算分区ID partitionId=Math.abs(groupId.hashCode() % offsetsTopicPartitionCount)
 b)分区Leader所在的Broker即是要找的。
-每个 ConsumerGroup 都有一个 Coordinator(协调者）负责分配 Consumer 和 Partition 的对应关系，当 Partition 或是 Consumer 发生变更时，会触发 rebalance（重新分配）过程，重新分配 Consumer 与 Partition 
-Consumer还会维护与 Coordinator 之间的心跳，这样 Coordinator 就能感知到 Consumer 的状态，在 Consumer 故障的时候及时触发 rebalance
+每个 ConsumerGroup 都有一个 Coordinator(协调者）负责分配 Consumer 和 Partition 的对应关系，当 Partition 或是 Consumer 发生变更时，会触发 rebalance（重新分配）过程，重新分配 Consumer 与 Partition.
+Consumer还会维护与 Coordinator 之间的心跳，这样 Coordinator 就能感知到 Consumer 的状态，在 Consumer 故障的时候及时触发 rebalance.
 
 
 15）Kafka Consumer是非线程安全的
