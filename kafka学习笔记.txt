@@ -225,6 +225,11 @@ c.Preferred领导者选举  避免某Borker负载过重，而重新选举领导�
 d.集群成员管理 包括Broker的增加，失效删除等
 e.数据服务  集群元数据的更新
 
+Kafka 2.8开始独立运行，不再需要ZooKeeper。
+过去Kafka因为带着ZooKeeper，因此被认为拥有笨重的基础设施，而在移除ZooKeeper之后，
+Kafka更轻巧更适用于小规模工作负载，轻量级单体程序适合用于边缘以及轻量级硬件解决方案。
+https://www.confluent.io/blog/kafka-without-zookeeper-a-sneak-peek/
+
 18) 什么是Kafka的高水位（High Watermark）
 Kafka的高水位是和Kafka位移相关的一个边界值。
 高水位的作用：
