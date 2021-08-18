@@ -37,18 +37,29 @@ b.Broker端发生了消息格式转化，即为了兼容老版本的消费者程
 总之:Producer压缩，Broker保持，Consumer解压。
 
 5) kakfka只对已提交的消息做有限度的持久化保证。
-那么什么是已提交的消息？即若干个Broker成功接收到一条消息并写入到日志文件后，会告诉Producer消息已经提交成功。可以通过配置选择只有一个Broker提交成功就算已提交，还是所有Broker都成功才算已提交。
-什么又是有限度的持久化保证？假设消息保存在N个Kafka Broker上，那么前提条件就是这N个Broker中至少一个存活。
+那么什么是已提交的消息？
+即若干个Broker成功接收到一条消息并写入到日志文件后，会告诉Producer消息已经提交成功。
+可以通过配置选择只有一个Broker提交成功就算已提交，还是所有Broker都成功才算已提交。
+
+什么又是有限度的持久化保证？
+假设消息保存在N个Kafka Broker上，那么前提条件就是这N个Broker中至少一个存活。
 所以，Producer永远要使用带有回调通知的发送API，也就是说不用使用producer.send(msg),而要使用producer.send(msg, callback)
 
-6) Consumer端有一个位移的概念。位移类似于我们看书时用的书签，标记当前阅读了多少页，下次翻书时就能直接调到书签页继续执行。所以为了Consumer端不丢消息，应该维持“先消费，再更新位移”的顺序。
+6) Consumer端有一个位移的概念。位移类似于我们看书时用的书签，标记当前阅读了多少页，下次翻书时就能直接调到书签页继续执行。
+所以为了Consumer端不丢消息，应该维持“先消费，再更新位移”的顺序。
 如果Consumer是多线程，就不要开启自动位移提交，而应该由程序手动提交。否则就会造成先更新位移丢消息的情况。
 enable.auto.commit=true则是自动提交。
 enable.commit.interal.ms则用配置自动提交周期，默认是5s提交一次。
-为什么Consumer端要提交位移呢？这是向Borker上报消费进度，比如某些异常导致Consumer挂了，那么重新起来后，可以接着消费，而不用从头开始消费。显然，位移提交是在分区粒度上进行的。
+
+为什么Consumer端要提交位移呢？
+这是向Borker上报消费进度，比如某些异常导致Consumer挂了，那么重新起来后，可以接着消费，而不用从头开始消费。
+显然，位移提交是在分区粒度上进行的。
 
 
-7）Kafka拦截器分为生产者拦截器和消费者拦截器。生产者拦截器可以在发送消息前和消息提交成功后植入拦截器的逻辑；消费者拦截器可以在消费消息前和提交位移后编写特定的逻辑。拦截器主要用于消息统计，端到端性能检测，客户端监测等。
+7）Kafka拦截器分为生产者拦截器和消费者拦截器。
+生产者拦截器可以在发送消息前和消息提交成功后植入拦截器的逻辑；
+消费者拦截器可以在消费消息前和提交位移后编写特定的逻辑。
+拦截器主要用于消息统计，端到端性能检测，客户端监测等。
 
 a.拦截器配置：
 Properties props = new Properties();
@@ -60,10 +71,15 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 b.拦截器的实现：
 Producer端实现org.apache.kafka.clients.ProducerInterceptor，覆写onSend和onAcknowledgement方法
 Consumer端实现org.apache.kafka.clients.ConsumerInterceptor，覆写onConsume和onCommit方法
-注意的是onAcknowledgement拦截器执行早于上面producer.send中的callback函数，而且onAcknowledgement和onSend不在同一个线程，如果它们之间有共享变量，要注意线程安全。也不要在onAcknowledgement中加入重要业务处理，因为这个方法处于Producer发送的主路径中，处理逻辑太复杂会严重影响性能。
+注意的是onAcknowledgement拦截器执行早于上面producer.send中的callback函数，而且onAcknowledgement和onSend不在同一个线程，
+如果它们之间有共享变量，要注意线程安全。也不要在onAcknowledgement中加入重要业务处理，因为这个方法处于Producer发送的主路径中，
+处理逻辑太复杂会严重影响性能。
 
 8）Kafka的所有通信都是基于TCP协议的，而不是HTTP协议。
-一是为了利用TCP的高级特性，多路复用请求。TCP的多路复用请求会再一条物理连接上创建若干个虚拟链接，每个虚拟链接负责流转自己的数据。实际上TCP的多路复用并不是真正意义上的多路复用，只是提供可靠的消息交付语义保证，比如消息丢失重传。二是TCP是传输层协议，HTTP是应用层协议（底层其实也是TCP），直接用TCP的效率会更高。
+一是为了利用TCP的高级特性，多路复用请求。
+TCP的多路复用请求会再一条物理连接上创建若干个虚拟链接，每个虚拟链接负责流转自己的数据。
+实际上TCP的多路复用并不是真正意义上的多路复用，只是提供可靠的消息交付语义保证，比如消息丢失重传。
+二是TCP是传输层协议，HTTP是应用层协议（底层其实也是TCP），直接用TCP的效率会更高。
 
 9）Producer程序关键就是配置KafkaProducer
 Properties props = new Properties ();
@@ -74,7 +90,7 @@ try (Producer<String, String> producer = new KafkaProducer<>(props)) {
             producer.send(new ProducerRecord<String, String>(……), callback);
 	……
 }
-在Kafka中，这个Send是一个异步方法。如果要确保发送成功，你必须在提供的回调方法中去检查发送结果。
+在Kafka中，这个send是一个异步方法。如果要确保发送成功，你必须在提供的回调方法中去检查发送结果。
 或者你也可以调用producer.send(record).get()来同步获取发送结果
 
 10) Kafka消息保障
@@ -82,20 +98,25 @@ a.最多一次：消息会丢失，但不会重复发送
 b.至少一次：消息不会丢失，但是可能重复发送
 c.精确一次：消息不会丢失，也不会重复发送
 默认是第二种，至少一次。
-消息重复发送的原因：某种原因（比如网络延迟），导致Broker应答成功没有返回Producer端，Producer端又发了一次，结果网络好了，就有了两条重复的消息。显然，如果禁止了消息重传，那么就变成了"最多一次"，但是这样就会丢消息了。
+消息重复发送的原因：某种原因（比如网络延迟），导致Broker应答成功没有返回Producer端，Producer端又发了一次，
+结果网络好了，就有了两条重复的消息。显然，如果禁止了消息重传，那么就变成了"最多一次"，但是这样就会丢消息了。
+
 如何实现精确一次？
-a.利用幂等性。props.put(“enable.idempotence,true)或者props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG,true)，这样会创建一个幂等的Producer.这样Broker端会帮你自动去重，原理很简单，就是Broker端多保存一些字段，当幂等Producer发送了具有相同字段值的消息后就知道消息重复了。这种方式只能保证一个主题上某个分区的消息没有重复。
+a.利用幂等性。props.put(“enable.idempotence,true)或者props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG,true)，
+这样会创建一个幂等的Producer.这样Broker端会帮你自动去重，原理很简单，就是Broker端多保存一些字段，
+当幂等Producer发送了具有相同字段值的消息后就知道消息重复了。这种方式只能保证一个主题上某个分区的消息没有重复。
 b.利用事务型Producer
 producer.initTransactions();
 try {
-            producer.beginTransaction();
-            producer.send(record1);
-            producer.send(record2);
-            producer.commitTransaction();
+    producer.beginTransaction();
+    producer.send(record1);
+    producer.send(record2);
+    producer.commitTransaction();
 } catch (KafkaException e) {
-            producer.abortTransaction();
+    producer.abortTransaction();
 }
-即recored1和recored2要么都成功，要么都失败。kafka默认的隔离级别是read_uncommitted,不建议使用，建议使用read_commit.当然，启动了事务，也会对性能产生影响。
+即recored1和recored2要么都成功，要么都失败。kafka默认的隔离级别是read_uncommitted,不建议使用，建议使用read_commit.
+当然，启动了事务，也会对性能产生影响。
 
 实际应用中建议保留默认的“至少一次”，因为“最多一次”会导致消息丢失，而“精确一次”会严重影响系统性能。
 在“至少一次”的情况下，对于重复消息，我们可以利用业务代码去“自动去重”。
@@ -103,18 +124,41 @@ try {
 11）什么是Consumer Group？
 是Kafka提供的可扩展且具有容错性的消费者机制。
 一个Consumer Group使用Group ID（唯一）标识，其下可以有1个或多个Consumer实例；
-其下订阅主题的单个分区，只能分配给组内的某个Consumer实例消费（当然也可以被其它Group消费）；
-Consumer Group订阅的所有主题，不必都消费。但理想情况下，主题数和Consumer实例数应该一致。
+其下订阅主题的单个分区，只能分配给组内的某个Consumer实例消费
+（一个分区可以被多个不同Group下的Consumer实例消费，实例消费的是主题下的某1个或多个分区）；
+
+当 Consumer Group 订阅多个主题后，组内的每个实例不要求一定要订阅主题的所有分区，它只会消费部分分区中的消息；
+Consumer Group 之间彼此队里，互不影响，它们可以订阅同一组主题而互不干涉。加上Broker端的消息留存机制，Kafka
+的Consumer Group 完美的避开了伸缩性差的问题；
+
+kafka用Consumer Group机制，实现了，传统两大消息引擎。
+如果所有实例属于同一个Group，那么它实现的就是消息队列模型；
+如果所有实例分别属于不同的Group，且订阅了相同的主题，那么它就实现了发布/订阅模型；
+
+Consumer Group 实例数量多少才合理？
+最理想的情况是Consumer实例的数量应该等于该Group订阅主题的分区总数。
+例如：Consumer Group 订阅了 3个主题，分别是A、B、C，它们的分区数依次是1、2、3，那么通常情况下，
+为该Group 设置6个Consumer实例是比较理想的情形。
+
+如果设置小于或大于6的实例可以吗？当然可以。
+如果你有3个实例，那么平均下来每个实例大约消费2个分区（6/3=2）;
+如果你设置了9个实例，那么很遗憾，有3个实例（9-6=3）将不会被分配任何分区，它们永远处于空闲状态。
+
 Kafka还有一类Standalone Consumer,它的运行机制与Consumer Group完全不同，但是位移管理机制却是完全相同的，
 它也有自己的GroupId.
 
 12) Kafka位移的原理
-当Kafka的第一个Consumer实例启动时，就会创建位移主题__consumer_offsets，自然也有对应的分区数（通过broker端offsets.topic.num.partitions参数配置，默认是50），
+当Kafka的第一个Consumer实例启动时，就会创建位移主题__consumer_offsets，
+自然也有对应的分区数（通过broker端offsets.topic.num.partitions参数配置，默认是50），
 副本数(offsets.topic.replication.factor, 默认值是3)
-Kafka将 Consumer 的位移数据作为一条条普通的 Kafka消息，提交到 __consumer_offsets中，__consumer_offsets 的主要作用是保存 Kafka的位移信息。位移主题也是一个普通的Kafka主题，但是有自己的消息格式，因此我们不要轻易去修改它。
+
+Kafka将 Consumer 的位移数据作为一条条普通的Kafka消息，提交到 __consumer_offsets中，
+__consumer_offsets 的主要作用是保存 Kafka的位移信息。
+位移主题也是一个普通的Kafka主题，但是有自己的消息格式，因此我们不要轻易去修改它。
+
 位移分为自动提交和手动提交。和Consumer端配置参数enable.auto.commit有关,默认是true.
-位移主题的消息格式可以简单的理解为<K,V>键值对，K是(GorupId,主题名,分区号)，V就是消息的内容（位移信息等）。因为Consumer提交位移信息是提交自己消费的分区的,
-所以K才必须要具体到分区这一层。
+位移主题的消息格式可以简单的理解为<K,V>键值对，K是(GorupId,主题名,分区号)，V就是消息的内容（位移信息等）。
+因为Consumer提交位移信息是提交自己消费的分区的,所以K才必须要具体到分区这一层。
 
 13）应该尽量避免Consumer Group的Rebalance
 Rebalance是Kafka为了解决哪些Consumer消费哪些主题分区而动态调整的一种机制
@@ -125,11 +169,16 @@ Rebalance是Kafka为了解决哪些Consumer消费哪些主题分区而动态调�
 但是Rebalance会影响消费者端的TPS,而且Rebalance效率也很低。
 要避免Coordinator错误的认为consumer实例挂了
 a.避免心跳请求误会
-Consumer端的参数session.timeout.ms默认是10s，表征每10s内，Coordinator如果没有收到consumer的心跳请求，就认为该consumer已挂，将其从Group中移除。这样就会导致重平衡。
-还有一个参数heartbeat.interval.ms用来配置心跳请求的频率，值越小，单位时间内心跳请求的次数就越多。因此要合理配置这两个参数，防止不必要的误会。
-b.避免消费时间过长的误会
-配置max.poll.interval.ms参数（默认5分钟，表征5分钟内都没有消费完消息，Consumer会主动发起离开Group的请求）比消费者处理总时间稍微长一些；优化消费者业务代码。
+Consumer端的参数session.timeout.ms默认是10s，表征每10s内，Coordinator如果没有收到consumer的心跳请求，
+就认为该consumer已挂，将其从Group中移除。这样就会导致重平衡。
 
+还有一个参数heartbeat.interval.ms用来配置心跳请求的频率，值越小，单位时间内心跳请求的次数就越多。
+因此要合理配置这两个参数，防止不必要的误会。
+
+b.避免消费时间过长的误会
+配置max.poll.interval.ms参数（默认5分钟，表征5分钟内都没有消费完消息，Consumer会主动发起离开Group的请求）
+应配置比消费者处理总时间稍微长一些；
+优化消费者业务代码。
 
 14）什么是协调者Coordinator
 每个Broker启动时都会创建一个Coordinator，专门为Consumer Group服务，负责Rebalance,位移管理和组成员管理。
@@ -137,16 +186,17 @@ b.避免消费时间过长的误会
 那么Consumer是如何知道自己的Coordinator所在的Broker？
 a)计算分区ID partitionId=Math.abs(groupId.hashCode() % offsetsTopicPartitionCount)
 b)分区Leader所在的Broker即是要找的。
-每个 ConsumerGroup 都有一个 Coordinator(协调者）负责分配 Consumer 和 Partition 的对应关系，当 Partition 或是 Consumer 发生变更时，会触发 rebalance（重新分配）过程，重新分配 Consumer 与 Partition.
-Consumer还会维护与 Coordinator 之间的心跳，这样 Coordinator 就能感知到 Consumer 的状态，在 Consumer 故障的时候及时触发 rebalance.
-
+每个 ConsumerGroup 都有一个 Coordinator(协调者）负责分配 Consumer 和 Partition 的对应关系，
+当 Partition 或是 Consumer 发生变更时，会触发 rebalance（重新分配）过程，重新分配 Consumer 与 Partition.
+Consumer还会维护与 Coordinator 之间的心跳，这样 Coordinator 就能感知到 Consumer 的状态，
+在 Consumer 故障的时候及时触发 rebalance.
 
 15）Kafka Consumer是非线程安全的
 如果多个线程中共享一个Kafka Consumer实例，那么抛出异常ConcurrentModificationExceptiom.
 例外：其它线程可以使用KafkaConsumer.wakeup()唤醒Consumer.
 
-
-16）Broker端处理请求，使用了Reactor设计模式，Acceptor线程只负责请求转发，不负责处理具体业务，具体业务都由其它线程处理，因此能够取得好的性能。
+16）Broker端处理请求，使用了Reactor设计模式，Acceptor线程只负责请求转发，不负责处理具体业务，
+具体业务都由其它线程处理，因此能够取得好的性能。
 
 17) Kafka控制器(Controller)是做什么的?
 协调组件的作用，严重依赖于zookeeper。具体来说：
@@ -171,20 +221,29 @@ ISR表示一个集合，即和Leader同步的副本结合，也包含Leader.
 20）为什么Kafka性能很好？
 Kafka 单个节点的极限处理能力接近每秒钟 2000 万条消息，吞吐量达到每秒钟 600MB：
 一）使用了批量的思想
-a）当你调用 send() 方法发送一条消息之后，无论你是同步发送还是异步发送，Kafka 都不会立即就把这条消息发送出去。它会先把这条消息，存放在内存中缓存起来，然后选择合适的时机把缓存中的所有消息组成一批，一次性发给 Broker。
+a）当你调用 send() 方法发送一条消息之后，无论你是同步发送还是异步发送，Kafka 都不会立即就把这条消息发送出去。
+它会先把这条消息，存放在内存中缓存起来，然后选择合适的时机把缓存中的所有消息组成一批，一次性发给 Broker。
 简单地说，就是攒一波一起发。你可以配置batch.size和linger.ms这两个参数来调整发送时机和批量大小。
-b）在 Broker 整个处理流程中，无论是写入磁盘、从磁盘读出来、还是复制到其他副本这些流程中，批消息都不会被解开，一直是作为一条“批消息”来进行处理的。
-c) 在消费时，消息同样是以批为单位进行传递的，Consumer 从 Broker 拉到一批消息后，在客户端把批消息解开，再一条一条交给用户代码处理。
+b）在 Broker 整个处理流程中，无论是写入磁盘、从磁盘读出来、还是复制到其他副本这些流程中，批消息都不会被解开，
+一直是作为一条“批消息”来进行处理的。
+c) 在消费时，消息同样是以批为单位进行传递的，Consumer 从 Broker 拉到一批消息后，在客户端把批消息解开，
+再一条一条交给用户代码处理。
 
 
 二）使用顺序读写提升磁盘IO性能
 在 SSD（固态硬盘）上，顺序读写的性能要比随机读写快几倍，如果是机械硬盘，这个差距会达到几十倍。
 顺序读写相比随机读写省去了大部分的寻址时间，它只要寻址一次，就可以连续地读写下去，所以说，性能要比随机读写要好很多。
-Kafka 就是充分利用了磁盘的这个特性。它的存储设计非常简单，对于每个分区，它把从 Producer 收到的消息，顺序地写入对应的 log 文件中，一个文件写满了，就开启一个新的文件这样顺序写下去。消费的时候，也是从某个全局的位置开始，也就是某一个 log 文件中的某个位置开始，顺序地把消息读出来
+Kafka 就是充分利用了磁盘的这个特性。它的存储设计非常简单，对于每个分区，它把从 Producer 收到的消息，顺序地写入对应的 log 文件中，
+一个文件写满了，就开启一个新的文件这样顺序写下去。
+消费的时候，也是从某个全局的位置开始，也就是某一个 log 文件中的某个位置开始，顺序地把消息读出来。
 
 三）利用PageCache加速读写
-通俗地说，PageCache 就是操作系统在内存中给磁盘上的文件建立的缓存。无论我们使用什么语言编写的程序，在调用系统的 API 读写文件的时候，并不会直接去读写磁盘上的文件，应用程序实际操作的都是 PageCache，也就是文件在内存中缓存的副本。
-Kafka 在读写消息文件的时候，充分利用了 PageCache 的特性。一般来说，消息刚刚写入到服务端就会被消费，按照 LRU 的“优先清除最近最少使用的页”这种策略，读取的时候，对于这种刚刚写入的 PageCache，命中的几率会非常高。
+通俗地说，PageCache 就是操作系统在内存中给磁盘上的文件建立的缓存。
+无论我们使用什么语言编写的程序，在调用系统的 API 读写文件的时候，并不会直接去读写磁盘上的文件，应用程序实际操作的都是 PageCache，
+也就是文件在内存中缓存的副本。
+Kafka 在读写消息文件的时候，充分利用了 PageCache 的特性。
+一般来说，消息刚刚写入到服务端就会被消费，按照 LRU 的“优先清除最近最少使用的页”这种策略，
+读取的时候，对于这种刚刚写入的 PageCache，命中的几率会非常高。
 
 四）使用了零拷贝技术
 Kafka利用了零拷贝技术，减少了系统内核态和用户态的交互，因此提升了性能。
@@ -192,4 +251,6 @@ Kafka利用了零拷贝技术，减少了系统内核态和用户态的交互，
 a)从文件复制数据到 PageCache 中，如果命中 PageCache，这一步可以省掉；
 b)从 PageCache 复制到应用程序的内存空间中，也就是我们可以操作的对象所在的内存；
 c)从应用程序的内存空间复制到 Socket 的缓冲区，这个过程就是我们调用网络应用框架的 API 发送数据的过程。
-Kafka 使用零拷贝技术可以把这个复制次数减少一次，上面的 b、c 步骤两次复制合并成一次复制。直接从 PageCache 中把数据复制到 Socket 缓冲区中，这样不仅减少一次数据复制，更重要的是，由于不用把数据复制到用户内存空间，DMA 控制器可以直接完成数据复制，不需要 CPU 参与，速度更快
+Kafka 使用零拷贝技术可以把这个复制次数减少一次，上面的 b、c 步骤两次复制合并成一次复制。
+直接从 PageCache 中把数据复制到 Socket 缓冲区中，这样不仅减少一次数据复制，
+更重要的是，由于不用把数据复制到用户内存空间，DMA 控制器可以直接完成数据复制，不需要 CPU 参与，速度更快。
