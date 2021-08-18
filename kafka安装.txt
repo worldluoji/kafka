@@ -1,4 +1,4 @@
-kafka基于zookpeer，所以要先安装zookeeper
+2.8版本之前的kafka基于zookpeer，所以要先安装zookeeper
 一.zookeeper安装：
 1) sudo apt install zookeeper　　或者去官网下载想要的版本
 2) 配置环境变量：
@@ -84,6 +84,77 @@ sh kafka-server-start.sh ../config/server.properties
 ps -aus | grep 9092即可查看kafka进程是否起来了
 
 
+2.8版本之后kafka已经可以不依赖于zookeeper了
+这种方式叫做kafka Raft元数据模式，简称KRaft模式，
+不过在该模式下有很多功能不可用，目前不建议生产环境使用。
+
+安装kafka即可：
+curl -O https://downloads.apache.org/kafka/2.8.0/kafka_2.13-2.8.0.tgz
+tar -xvf kafka_2.13-2.8.0.tgz
+
+一些配置项
+broker.id=0  broker的id或者编号，在集群中该编号必须唯一
+listeners=PLAINTEXT://127.0.0.1:9092 # kafka服务器监听的端口，该端口也是对外提供服务的端口
+log.dirs=/usr/local/kafka/log/kafka #日志存放路径
+num.partitions=1  #topic下分区的数量
+log.retentio.hours=168  #消息保存的小时数
+default.replication.factor=3  #消息的副本数量，这是kafka高可用、数据不丢失的关键
+如果还是使用zookeeper, 则使用config/server.properties
+zookeeper.connect=xxx  #zookeeper的地址
+
+如果使用kraft模式，则使用config/kraft/server.properties
+这时候可以看到默认配置：
+listeners=PLAINTEXT://:9092,CONTROLLER://:9093
+inter.broker.listener.name=PLAINTEXT
+即kafka对外服务端口为9092，CONTROLLER端口是9093
+
+
+启动：
+bin/kafka-server-start.sh config/server.properties
+~~~~
+kraft模式启动：可以参考config/kraft/README.md
+## Generate a cluster ID
+The first step is to generate an ID for your new cluster, using the kafka-storage tool:
+
+~~~~
+$ ./bin/kafka-storage.sh random-uuid
+s2OXu1wuTbC7B_b47WtrCA
+~~~~
+这里注意生成的uuid不能以“-”开头，否则下一步会报错，重新生成一个即可。
+
+## Format Storage Directories
+The next step is to format your storage directories.  If you are running in single-node mode, 
+you can do this with one command:
+
+~~~~
+$ ./bin/kafka-storage.sh format -t <uuid> -c ./config/kraft/server.properties
+Formatting /tmp/kraft-combined-logs
+~~~~
+这里的<uuid>替换为上面的s2OXu1wuTbC7B_b47WtrCA
+
+If you are using multiple nodes, then you should run the format command on each node.  
+Be sure to use the same cluster ID for each one.
+
+## Start the Kafka Server
+Finally, you are ready to start the Kafka server on each node.
+
+~~~~
+$ ./bin/kafka-server-start.sh ./config/kraft/server.properties
+[2021-02-26 15:37:11,071] INFO Registered kafka:type=kafka.Log4jController MBean (kafka.utils.Log4jControllerRegistration$)
+[2021-02-26 15:37:11,294] INFO Setting -D jdk.tls.rejectClientInitiatedRenegotiation=true to disable client-initiated TLS renegotiation (org.apache.zookeeper.common.X509Util)
+[2021-02-26 15:37:11,466] INFO [Log partition=@metadata-0, dir=/tmp/kraft-combined-logs] Loading producer state till offset 0 with message format version 2 (kafka.log.Log)
+[2021-02-26 15:37:11,509] INFO [raft-expiration-reaper]: Starting (kafka.raft.TimingWheelExpirationService$ExpiredOperationReaper)
+[2021-02-26 15:37:11,640] INFO [RaftManager nodeId=1] Completed transition to Unattached(epoch=0, voters=[1], electionTimeoutMs=9037) (org.apache.kafka.raft.QuorumState)
+...
+~~~~
+
+Just like with a ZooKeeper based broker, you can connect to port 9092 (or whatever port you configured) to perform administrative operations or produce or consume data.
+
+~~~~
+$ ./bin/kafka-topics.sh --create --topic foo --partitions 1 --replication-factor 1 --bootstrap-server localhost:9092
+Created topic foo.
+~~~~
 
 
 
+参考：https://www.cnblogs.com/teach/p/14853468.html
