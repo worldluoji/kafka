@@ -146,6 +146,25 @@ Consumer Group 实例数量多少才合理？
 
 Kafka还有一类Standalone Consumer,它的运行机制与Consumer Group完全不同，但是位移管理机制却是完全相同的，
 它也有自己的GroupId.
+独立消费者模式，即消费者可以指定分区进行消费，如果只用一个topic，每个消息源启动一个生产者，
+分别发往不同的分区，消费者指定消费相关的分区即可：
+Kafka#assgin 方法手动订阅指定分区进行消费：
+Properties kafkaProperties = new Properties();
+kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+kafkaProperties.put("bootstrap.servers", "localhost:9092");
+KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(kafkaProperties);
+List<TopicPartition> partitions = new ArrayList<>();
+partitions.add(new TopicPartition("test_topic", 0));
+partitions.add(new TopicPartition("test_topic", 1));
+consumer.assign(partitions);
+while (true) {
+    ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(3000));
+    for (ConsumerRecord<String, byte[]> record : records) {
+        System.out.printf("topic:%s, partition:%s%n", record.topic(), record.partition());
+    }
+}
+
 
 12) Kafka位移的原理
 当Kafka的第一个Consumer实例启动时，就会创建位移主题__consumer_offsets，
