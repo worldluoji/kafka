@@ -33,9 +33,8 @@ public class App {
         System.out.println("task begin");
         Producer<String, String> producer = new SimpleProducer().getProducer();
         Consumer<String, String> consumer = new SimpleConsumer().getConsumer();
-        ExecutorService executorService = Executors.newFixedThreadPool(4);
         producer.send(
-            new ProducerRecord<String, String>("test-topic1", Integer.toString(1)),
+            new ProducerRecord<String, String>("test-topic1", Integer.toString(1), Integer.toString(1)),
             new Callback() {
                 @Override
                 public void onCompletion(RecordMetadata arg0, Exception arg1) {
@@ -48,6 +47,7 @@ public class App {
             }
         ).get();
 
+        ExecutorService executorService = Executors.newFixedThreadPool(4);
         executorService.submit(() -> {
             for (int i = 0; i < NUM_OF_MESSAGES; i++) {
                 System.out.println("[Producer]send " + i);

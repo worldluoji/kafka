@@ -158,3 +158,10 @@ Created topic foo.
 
 
 参考：https://www.cnblogs.com/teach/p/14853468.html
+
+问题：kafka报错：Connection to node 1 (localhost/127.0.0.1:9092) could not be established.
+
+原因：没有在kafka的config/server.properties文件中配置 listeners=PLAINTEXT:IP地址:9092
+
+如果不配置具体IP地址，则默认使用localhost，不在kafka所在的机器上连接时就会报上述错误，
+因为kafka在zookeeper中注册时使用的localhost。

@@ -12,7 +12,7 @@ import java.util.Optional;
 @Slf4j
 @Component
 public class KafkaReceiver {
-    @KafkaListener(topics = {"SimpleTopic"})
+    @KafkaListener(topics = {"test-topic1"})
     public void listen(ConsumerRecord<?, ?> record) {
         Optional<?> kafkaMessage = Optional.ofNullable(record.value());
         if (kafkaMessage.isPresent()) {

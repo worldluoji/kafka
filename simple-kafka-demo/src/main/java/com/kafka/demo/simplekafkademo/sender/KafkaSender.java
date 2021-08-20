@@ -27,6 +27,6 @@ public class KafkaSender {
         message.setSendTime(LocalDateTime.now());
         String gsonMsg = gson.toJson(message);
         log.info("Producer Send Message : {}", gsonMsg);
-        kafkaTemplate.send("SimpleTopic", gsonMsg);
+        kafkaTemplate.send("test-topic1", gsonMsg);
     }
 }

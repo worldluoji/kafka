@@ -46,4 +46,12 @@ topic的名称必须满足如下规则：
 不能为空、不能为.、不能为..
 长度不能超过249
 
+
+查看对应topic的描述信息： 
+./kafka-topics.sh --describe --zookeeper xx.x.xxx.xxx:2181 --topic xxxxx.xx.xxxxx.xxx     # --zookeeper为zookeeperIP, --topic为topic名称 
+消费消息：
+./kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic xxxxx.xx.xxxxx.xxx --from-beginning    # 若没有任何返回或没有响应，则该topic中没有数据内容；否则就是有数据
+
+
+
  官方文档：https://kafka.apache.org/documentation/
