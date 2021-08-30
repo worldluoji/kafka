@@ -1,11 +1,9 @@
 package com.example.kafka;
 
 import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -26,26 +24,12 @@ import org.slf4j.Logger;
  *  test-topic1
  */
 public class App {
-    private static final CountDownLatch c = new CountDownLatch(1);
     private static final int NUM_OF_MESSAGES = 100;
     private static final Logger logger = LoggerFactory.getLogger(App.class);
     public static void main( String[] args ) throws InterruptedException, ExecutionException {
-        System.out.println("task begin");
+        logger.info("task begin");
         Producer<String, String> producer = new SimpleProducer().getProducer();
         Consumer<String, String> consumer = new SimpleConsumer().getConsumer();
-        producer.send(
-            new ProducerRecord<String, String>("test-topic1", Integer.toString(1), Integer.toString(1)),
-            new Callback() {
-                @Override
-                public void onCompletion(RecordMetadata arg0, Exception arg1) {
-                    if (arg1 == null) {
-                        logger.info("[Producer]send success " + arg0.offset());  
-                    } else {
-                        logger.error("failed", arg1);
-                    }
-                }
-            }
-        ).get();
 
         ExecutorService executorService = Executors.newFixedThreadPool(4);
         executorService.submit(() -> {
@@ -67,28 +51,21 @@ public class App {
             }
         });
 
-        System.out.println("1111111");
-        executorService.submit(() -> {
-            while (true) {
-                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
-                for (ConsumerRecord<String, String> record : records) {
-                    System.out.printf("[ConsumerProcess]offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value());
-                    if (String.valueOf(NUM_OF_MESSAGES - 1).equals(record.key())) {
-                        c.countDown();
-                        break;
-                    }
-                }
-
+        // consumer是非线程安全的，不能放到线程池里去玩
+        // 这里简单的收齐NUM_OF_MESSAGES条消息后就结束
+        int count = 0;
+        while (count < NUM_OF_MESSAGES) {
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+            count += records.count();
+            for (ConsumerRecord<String, String> record : records) {
+                System.out.printf("[ConsumerProcess]offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value());
             }
-        });
+        }
        
-        System.out.println("2222222");
-        c.await(5, TimeUnit.SECONDS);
-        System.out.println("3333333");
         producer.close();
         consumer.close();
-        
         executorService.shutdown();
-        System.out.println("task end");
+
+        logger.info("task end");
     }
 }
