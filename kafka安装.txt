@@ -107,7 +107,7 @@ zookeeper.connect=xxx  #zookeeper的地址
 listeners=PLAINTEXT://:9092,CONTROLLER://:9093
 inter.broker.listener.name=PLAINTEXT
 即kafka对外服务端口为9092，CONTROLLER端口是9093
-
+advertised.listeners=PLAINTEXT://localhost:9092
 
 启动：
 bin/kafka-server-start.sh config/server.properties
@@ -165,3 +165,7 @@ Created topic foo.
 
 如果不配置具体IP地址，则默认使用localhost，不在kafka所在的机器上连接时就会报上述错误，
 因为kafka在zookeeper中注册时使用的localhost。
+
+2.8版本中，修改：
+advertised.listeners=PLAINTEXT://IP地址:9092
+直接修改listeners会报错
