@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 public class KafkaSendCallBack implements ProducerListener {
+    
     @Override
     public void onSuccess(ProducerRecord producerRecord, RecordMetadata recordMetadata) {
         log.info("Message send success {}", producerRecord.toString());
