@@ -14,12 +14,7 @@ kafka是纯二进制进行消息传输的，并没有使用流行的Protobuf和J
 2) kafka还是一个分布式流处理平台。
 
 3）kafka为什么要分区？分区的作用就是提供负载均衡。分区策略则决定了消息会发到哪个分区。
-常见的分区策略：随机，轮询，按照key值
-kafka默认使用的是轮询的策略。
-按照key值的策略也十分常用，如果指定了key值就是按照key值的策略：
-List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
-return Math.abs(key.hashCode()) % partitions.size();
-当然，也可以自定义分区策略。实现Partitioner接口，覆写其partition()方法和close()方法即可
+参考《kafka分区是如何分配的》
 
 4) kafka压缩可以发生在生产者端和Broken端。生产者端配置compression.type即表示开启了指定类型的压缩算法。
 例：
@@ -128,7 +123,7 @@ try {
 （一个分区可以被多个不同Group下的Consumer实例消费，实例消费的是主题下的某1个或多个分区）；
 
 当 Consumer Group 订阅多个主题后，组内的每个实例不要求一定要订阅主题的所有分区，它只会消费部分分区中的消息；
-Consumer Group 之间彼此队里，互不影响，它们可以订阅同一组主题而互不干涉。加上Broker端的消息留存机制，Kafka
+Consumer Group 之间彼此对立，互不影响，它们可以订阅同一组主题而互不干涉。加上Broker端的消息留存机制，Kafka
 的Consumer Group 完美的避开了伸缩性差的问题；
 
 kafka用Consumer Group机制，实现了，传统两大消息引擎。
